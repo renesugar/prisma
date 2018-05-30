@@ -21,7 +21,7 @@ case class PostgresDataResolver(
 )(implicit ec: ExecutionContext)
     extends DataResolver {
 
-  val queryBuilder = PostgresApiDatabaseQueryBuilder(schemaName = schemaName.getOrElse(project.id))
+  val queryBuilder = PostgresApiDatabaseQueryBuilder(project.schema, schemaName = schemaName.getOrElse(project.id))
 
   override def resolveByGlobalId(globalId: IdGCValue): Future[Option[PrismaNode]] = { //todo rewrite this to use normal query?
     if (globalId.value == "viewer-fixed") return Future.successful(Some(PrismaNode(globalId, RootGCValue.empty, Some("Viewer"))))
@@ -51,20 +51,24 @@ case class PostgresDataResolver(
   }
 
   override def resolveByUnique(where: NodeSelector): Future[Option[PrismaNode]] =
-    batchResolveByUnique(where.model, where.field.name, Vector(where.fieldValue)).map(_.headOption)
+    batchResolveByUnique(where.model, where.field, Vector(where.fieldValue)).map(_.headOption)
 
   override def countByTable(table: String, whereFilter: Option[DataItemFilterCollection] = None): Future[Int] = {
-    val query = queryBuilder.countAllFromTable(table, whereFilter)
+    val actualTable = project.schema.getModelByName(table) match {
+      case Some(model) => model.dbName
+      case None        => table
+    }
+    val query = queryBuilder.countAllFromTable(actualTable, whereFilter)
     performWithTiming("countByModel", readonlyClientDatabase.run(query))
   }
 
-  override def batchResolveByUnique(model: Model, fieldName: String, values: Vector[GCValue]): Future[Vector[PrismaNode]] = {
-    val query = queryBuilder.batchSelectFromModelByUnique(model, fieldName, values)
+  override def batchResolveByUnique(model: Model, field: Field, values: Vector[GCValue]): Future[Vector[PrismaNode]] = {
+    val query = queryBuilder.batchSelectFromModelByUnique(model, field.dbName, values)
     performWithTiming("batchResolveByUnique", readonlyClientDatabase.run(query))
   }
 
   override def batchResolveScalarList(model: Model, listField: Field, nodeIds: Vector[IdGCValue]): Future[Vector[ScalarListValues]] = {
-    val query = queryBuilder.selectFromScalarList(model.name, listField, nodeIds)
+    val query = queryBuilder.selectFromScalarList(model.dbName, listField, nodeIds)
     performWithTiming("batchResolveScalarList", readonlyClientDatabase.run(query))
   }
 
@@ -86,7 +90,8 @@ case class PostgresDataResolver(
   }
 
   override def loadRelationRowsForExport(relationId: String, args: Option[QueryArguments] = None): Future[ResolverResult[RelationNode]] = {
-    val query = queryBuilder.selectAllFromRelationTable(relationId, args)
+    val relation = project.schema.relations.find(_.relationTableName == relationId).get
+    val query    = queryBuilder.selectAllFromRelationTable(relation, args)
     performWithTiming("loadRelationRowsForExport", readonlyClientDatabase.run(query))
   }
 

@@ -12,7 +12,7 @@ import play.api.libs.json._
 
 class ListValueImportExportSpec extends FlatSpec with Matchers with ApiSpecBase with AwaitUtils {
 
-  val project: Project = SchemaDsl() { schema =>
+  val project: Project = SchemaDsl.fromBuilder { schema =>
     val enum = schema.enum("Enum", Vector("AB", "CD", "\uD83D\uDE0B", "\uD83D\uDCA9"))
 
     schema
@@ -56,7 +56,9 @@ class ListValueImportExportSpec extends FlatSpec with Matchers with ApiSpecBase 
         |]}
         |""".stripMargin.parseJson
 
-    importer.executeImport(lists).await().toString should include("Failure inserting into listTable Model0_stringList for the id 3 for value ")
+    val model = project.schema.getModelByName_!("Model0")
+    val field = model.getFieldByName_!("stringList")
+    importer.executeImport(lists).await().toString should include(s"Failure inserting into listTable ${model.dbName}_${field.dbName} for the id 3 for value ")
   }
 
   "Exporting nodes" should "work (with filesize limit set to 1000 for test) and preserve the order of items" in {

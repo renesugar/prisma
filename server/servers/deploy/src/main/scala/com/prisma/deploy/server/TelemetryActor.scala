@@ -30,7 +30,7 @@ case class TelemetryActor(connector: DeployConnector)(implicit val materializer:
 
   def initialDelay: FiniteDuration = info.lastPing match {
     case Some(lastPing) =>
-      Math.abs(regularInterval.toMillis + initialGracePeriod.toMillis - (new DateTime().getMillis - lastPing.getMillis)).millis
+      Math.max(regularInterval.toMillis - (new DateTime().getMillis - lastPing.getMillis), 0).millis + initialGracePeriod
 
     case None =>
       initialGracePeriod
@@ -45,13 +45,7 @@ case class TelemetryActor(connector: DeployConnector)(implicit val materializer:
   private def report = {
     connector.projectPersistence
       .loadAll()
-      .flatMap { projects =>
-        gqlClient.sendQuery(s"""
-         |mutation {
-         |  ping(id: "${info.id}", services: ${projects.length}, version: "$version")
-         |}
-        """.stripMargin)
-      }
+      .flatMap(projects => gqlClient.sendQuery(s"""mutation {ping(id: "${info.id}", services: ${projects.length}, version: "$version")}""".stripMargin))
       .onComplete {
         case Success(resp) =>
           if (resp.is2xx) {

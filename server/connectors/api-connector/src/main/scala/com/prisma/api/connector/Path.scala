@@ -2,15 +2,17 @@ package com.prisma.api.connector
 
 import com.prisma.api.schema.APIErrors
 import com.prisma.shared.models.RelationSide.RelationSide
-import com.prisma.shared.models.{Field, Model, Project, Relation}
+import com.prisma.shared.models._
 
 trait Edge {
   def parent: Model
   def parentField: Field
-  def parentRelationSide: RelationSide = parentField.relationSide.get
+  def columnForParentRelationSide(schema: Schema) = relation.columnForRelationSide(schema, parentRelationSide)
+  def parentRelationSide: RelationSide            = parentField.relationSide.get
   def child: Model
   def childField: Option[Field]
-  def childRelationSide: RelationSide = parentField.oppositeRelationSide.get
+  def columnForChildRelationSide(schema: Schema) = relation.columnForRelationSide(schema, childRelationSide)
+  def childRelationSide: RelationSide            = parentField.oppositeRelationSide.get
   def relation: Relation
   def toNodeEdge(where: NodeSelector): NodeEdge = {
     NodeEdge(parent, parentField, child, childField, where, relation)
@@ -31,6 +33,9 @@ case class Path(root: NodeSelector, edges: List[Edge]) {
   def lastRelation_!               = lastRelation.get
   def parentSideOfLastEdge         = lastEdge_!.parentRelationSide
   def childSideOfLastEdge          = lastEdge_!.childRelationSide
+
+  def columnForParentSideOfLastEdge(schema: Schema) = lastEdge_!.columnForParentRelationSide(schema)
+  def columnForChildSideOfLastEdge(schema: Schema)  = lastEdge_!.columnForChildRelationSide(schema)
 
   def removeLastEdge: Path = edges match {
     case Nil => sys.error("Don't call this on an empty path")

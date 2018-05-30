@@ -3,7 +3,7 @@ package com.prisma.deploy.connector.postgresql.database
 import java.sql.PreparedStatement
 
 import com.prisma.shared.models.TypeIdentifier.TypeIdentifier
-import com.prisma.shared.models.{Project, TypeIdentifier}
+import com.prisma.shared.models.{Field, Model, Project, TypeIdentifier}
 import slick.dbio.DBIOAction
 import slick.jdbc.PostgresProfile.api._
 
@@ -33,9 +33,9 @@ object PostgresDeployDatabaseMutationBuilder {
 
   def truncateProjectTables(project: Project) = {
     val listTableNames: List[String] =
-      project.models.flatMap(model => model.fields.collect { case field if field.isScalar && field.isList => s"${model.name}_${field.name}" })
+      project.models.flatMap(model => model.fields.collect { case field if field.isScalar && field.isList => s"${model.dbName}_${field.dbName}" })
 
-    val tables = Vector("_RelayId") ++ project.models.map(_.name) ++ project.relations.map(_.relationTableName) ++ listTableNames
+    val tables = Vector("_RelayId") ++ project.models.map(_.dbName) ++ project.relations.map(_.relationTableNameNew(project.schema)) ++ listTableNames
 
     DBIO.seq(tables.map(name => sqlu"""TRUNCATE TABLE  "#${project.id}"."#$name" CASCADE """): _*)
   }
@@ -45,20 +45,18 @@ object PostgresDeployDatabaseMutationBuilder {
   def dropTable(projectId: String, tableName: String)                              = sqlu"""DROP TABLE "#$projectId"."#$tableName""""
   def dropScalarListTable(projectId: String, modelName: String, fieldName: String) = sqlu"""DROP TABLE "#$projectId"."#${modelName}_#${fieldName}""""
 
-  def createTable(projectId: String, name: String) = {
+  def createTable(projectId: String, name: String, nameOfIdField: String) = {
 
     sqlu"""CREATE TABLE "#$projectId"."#$name"
-    ("id" VARCHAR (25) NOT NULL,
-    "createdAt" TIMESTAMP (3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP (3) NOT NULL DEFAULT CURRENT_TIMESTAMP, 
-    PRIMARY KEY ("id")
+    ("#$nameOfIdField" VARCHAR (25) NOT NULL,
+    PRIMARY KEY ("#$nameOfIdField")
     )"""
   }
 
-  def createScalarListTable(projectId: String, modelName: String, fieldName: String, typeIdentifier: TypeIdentifier) = {
+  def createScalarListTable(projectId: String, model: Model, fieldName: String, typeIdentifier: TypeIdentifier) = {
     val sqlType = sqlTypeForScalarTypeIdentifier(typeIdentifier)
-    sqlu"""CREATE TABLE "#$projectId"."#${modelName}_#${fieldName}"
-    ("nodeId" VARCHAR (25) NOT NULL REFERENCES "#$projectId"."#$modelName" ("id"),
+    sqlu"""CREATE TABLE "#$projectId"."#${model.dbName}_#$fieldName"
+    ("nodeId" VARCHAR (25) NOT NULL REFERENCES "#$projectId"."#${model.dbName}" ("#${model.dbNameOfIdField_!}"),
     "position" INT NOT NULL,
     "value" #$sqlType NOT NULL,
     PRIMARY KEY ("nodeId", "position")
@@ -125,22 +123,32 @@ object PostgresDeployDatabaseMutationBuilder {
   }
 
   def removeUniqueConstraint(projectId: String, tableName: String, columnName: String) = {
-    sqlu"""DROP INDEX "#$projectId.#$tableName.#$columnName._UNIQUE""""
+    sqlu"""DROP INDEX "#$projectId"."#$projectId.#$tableName.#$columnName._UNIQUE""""
   }
 
-  def createRelationTable(projectId: String, relationTableName: String, aTableName: String, bTableName: String) = {
+  def createRelationTable(projectId: String, relationTableName: String, modelA: Model, modelB: Model) = {
 
-    val tableCreate = sqlu"""CREATE TABLE "#$projectId"."#$relationTableName" ("id" CHAR(25)  NOT NULL,
-           PRIMARY KEY ("id"),
+    val tableCreate = sqlu"""CREATE TABLE "#$projectId"."#$relationTableName" (
+    "id" CHAR(25)  NOT NULL,
+    PRIMARY KEY ("id"),
     "A" VARCHAR (25)  NOT NULL,
     "B" VARCHAR (25)  NOT NULL,
-    FOREIGN KEY ("A") REFERENCES "#$projectId"."#$aTableName"("id") ON DELETE CASCADE,
-    FOREIGN KEY ("B") REFERENCES "#$projectId"."#$bTableName"("id") ON DELETE CASCADE)
+    FOREIGN KEY ("A") REFERENCES "#$projectId"."#${modelA.dbName}"("#${modelA.dbNameOfIdField_!}") ON DELETE CASCADE,
+    FOREIGN KEY ("B") REFERENCES "#$projectId"."#${modelB.dbName}"("#${modelA.dbNameOfIdField_!}") ON DELETE CASCADE)
     ;"""
 
     val indexCreate = sqlu"""CREATE UNIQUE INDEX "#${relationTableName}_AB_unique" on  "#$projectId"."#$relationTableName" ("A" ASC, "B" ASC)"""
 
     DBIOAction.seq(tableCreate, indexCreate)
+  }
+
+  def createRelationColumn(projectId: String, model: Model, field: Option[Field], references: Model, column: String) = {
+    val sqlType    = sqlTypeForScalarTypeIdentifier(TypeIdentifier.GraphQLID)
+    val isRequired = false //field.exists(_.isRequired)
+    val nullString = if (isRequired) "NOT NULL" else "NULL"
+    val addColumn  = sqlu"""ALTER TABLE "#$projectId"."#${model.dbName}" ADD COLUMN "#$column" #$sqlType #$nullString
+                            REFERENCES "#$projectId"."#${references.dbName}"(#${references.dbNameOfIdField_!}) ON DELETE SET NULL;"""
+    addColumn
   }
 
   private def sqlTypeForScalarTypeIdentifier(typeIdentifier: TypeIdentifier): String = {

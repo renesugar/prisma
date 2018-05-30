@@ -44,7 +44,7 @@ case class ManagementServer(prefix: String = "", server2serverSecret: Option[Str
   val requestPrefix                          = sys.env.getOrElse("ENV", "local")
   val schemaManagerSecured                   = server2serverSecret.exists(_.nonEmpty)
   val projectIdEncoder                       = dependencies.projectIdEncoder
-  val telemetryActor                         = system.actorOf(Props(TelemetryActor(dependencies.deployConnector)))
+  val telemetryActor                         = dependencies.telemetryActor
 
   def errorExtractor(t: Throwable): Option[Int] = t match {
     case e: DeployApiError => Some(e.code)
@@ -56,21 +56,21 @@ case class ManagementServer(prefix: String = "", server2serverSecret: Option[Str
     val requestBeginningTime = System.currentTimeMillis()
 
     def logRequestEnd(projectId: Option[String] = None, clientId: Option[String] = None) = {
-      log(
-        Json
-          .toJson(
-            LogData(
-              key = LogKey.RequestComplete,
-              requestId = requestId,
-              projectId = projectId,
-              clientId = clientId,
-              payload = Some(Map("request_duration" -> (System.currentTimeMillis() - requestBeginningTime)))
-            )
-          )
-          .toString())
+//      log(
+//        Json
+//          .toJson(
+//            LogData(
+//              key = LogKey.RequestComplete,
+//              requestId = requestId,
+//              projectId = projectId,
+//              clientId = clientId,
+//              payload = Some(Map("request_duration" -> (System.currentTimeMillis() - requestBeginningTime)))
+//            )
+//          )
+//          .toString())
     }
 
-    logger.info(Json.toJson(LogData(LogKey.RequestNew, requestId)).toString())
+//    logger.info(Json.toJson(LogData(LogKey.RequestNew, requestId)).toString())
 
     handleExceptions(toplevelExceptionHandler(requestId)) {
       TimeResponseDirectiveImpl(DeployMetrics).timeResponse {

@@ -9,25 +9,29 @@ import slick.jdbc.SQLActionBuilder
 object QueryArgumentsExtensions {
   val MAX_NODE_COUNT = 1000
 
-  def extractQueryArgs(projectId: String,
-                       modelName: String,
-                       args: Option[QueryArguments],
-                       defaultOrderShortcut: Option[String],
-                       overrideMaxNodeCount: Option[Int],
-                       forList: Boolean = false): (Option[SQLActionBuilder], Option[SQLActionBuilder], Option[SQLActionBuilder]) = {
+  def extractQueryArgs(
+      projectId: String,
+      tableName: String,
+      idFieldName: String,
+      args: Option[QueryArguments],
+      defaultOrderShortcut: Option[String],
+      overrideMaxNodeCount: Option[Int],
+      forList: Boolean = false,
+      quoteTableName: Boolean = true,
+  ): (Option[SQLActionBuilder], Option[SQLActionBuilder], Option[SQLActionBuilder]) = {
     args match {
       case None => (None, None, None)
       case Some(givenArgs: QueryArguments) =>
         val orderByCommand =
-          if (forList) givenArgs.extractOrderByCommandForLists(projectId, modelName, defaultOrderShortcut)
-          else givenArgs.extractOrderByCommand(projectId, modelName, defaultOrderShortcut)
+          if (forList) givenArgs.extractOrderByCommandForLists(projectId, tableName, defaultOrderShortcut)
+          else givenArgs.extractOrderByCommand(projectId, tableName, idFieldName, defaultOrderShortcut)
 
         (
-          givenArgs.extractWhereConditionCommand(projectId, modelName),
+          givenArgs.extractWhereConditionCommand(projectId, tableName, quoteTableName),
           orderByCommand,
           overrideMaxNodeCount match {
-            case None                => givenArgs.extractLimitCommand(projectId, modelName)
-            case Some(maxCount: Int) => givenArgs.extractLimitCommand(projectId, modelName, maxCount)
+            case None                => givenArgs.extractLimitCommand(projectId, tableName)
+            case Some(maxCount: Int) => givenArgs.extractLimitCommand(projectId, tableName, maxCount)
           }
         )
     }
@@ -64,7 +68,12 @@ object QueryArgumentsExtensions {
       Some(sql""""#$projectId"."#$modelId"."nodeId" #$order, "#$projectId"."#$modelId"."position" #$idOrder""")
     }
 
-    def extractOrderByCommand(projectId: String, modelId: String, defaultOrderShortcut: Option[String] = None): Option[SQLActionBuilder] = {
+    def extractOrderByCommand(
+        projectId: String,
+        tableName: String,
+        idFieldName: String,
+        defaultOrderShortcut: Option[String] = None
+    ): Option[SQLActionBuilder] = {
 
       if (first.isDefined && last.isDefined) throw APIErrors.InvalidConnectionArguments()
 
@@ -75,11 +84,11 @@ object QueryArgumentsExtensions {
         case false => (defaultOrder, "asc")
       }
 
-      val idField = s""""$projectId"."$modelId"."id""""
+      val idField = s""""$projectId"."$tableName"."$idFieldName""""
 
       orderBy match {
-        case Some(orderByArg) if orderByArg.field.name != "id" =>
-          val orderByField = s""""$projectId"."$modelId"."${orderByArg.field.name}""""
+        case Some(orderByArg) if orderByArg.field.dbName != idFieldName =>
+          val orderByField = s""""$projectId"."$tableName"."${orderByArg.field.dbName}""""
 
           // First order by the orderByField, then by id to break ties
           Some(sql"#$orderByField #$order, #$idField #$idOrder")
@@ -127,12 +136,12 @@ object QueryArgumentsExtensions {
       }
     }
 
-    def extractWhereConditionCommand(projectId: String, tableName: String): Option[SQLActionBuilder] = {
+    def extractWhereConditionCommand(projectId: String, tableName: String, quoteTableName: Boolean): Option[SQLActionBuilder] = {
 
       if (first.isDefined && last.isDefined) throw APIErrors.InvalidConnectionArguments()
 
       val standardCondition = filter match {
-        case Some(filterArg) => QueryArgumentsHelpers.generateFilterConditions(projectId, tableName, filterArg)
+        case Some(filterArg) => QueryArgumentsHelpers.generateFilterConditions(projectId, tableName, filterArg, quoteTableName = quoteTableName)
         case None            => None
       }
 
@@ -162,7 +171,7 @@ object QueryArgumentsExtensions {
       // First, we fetch the ordering for the query. If none is passed, we order by id, ascending.
       // We need that since before/after are dependent on the order.
       val (orderByField, sortDirection) = orderBy match {
-        case Some(orderByArg) => (s""""$projectId"."$modelId"."${orderByArg.field.name}"""", orderByArg.sortOrder.toString)
+        case Some(orderByArg) => (s""""$projectId"."$modelId"."${orderByArg.field.dbName}"""", orderByArg.sortOrder.toString)
         case None             => (idField, "asc")
       }
 

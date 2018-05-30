@@ -8,30 +8,32 @@ object CreateScalarListInterpreter extends SqlMutactionInterpreter[CreateScalarL
   override def execute(mutaction: CreateScalarListTable) = {
     PostgresDeployDatabaseMutationBuilder.createScalarListTable(
       projectId = mutaction.projectId,
-      modelName = mutaction.model,
-      fieldName = mutaction.field,
-      typeIdentifier = mutaction.typeIdentifier
+      model = mutaction.model,
+      fieldName = mutaction.field.dbName,
+      typeIdentifier = mutaction.field.typeIdentifier
     )
   }
 
   override def rollback(mutaction: CreateScalarListTable) = {
     DBIO.seq(
-      PostgresDeployDatabaseMutationBuilder.dropScalarListTable(projectId = mutaction.projectId, modelName = mutaction.model, fieldName = mutaction.field))
+      PostgresDeployDatabaseMutationBuilder
+        .dropScalarListTable(projectId = mutaction.projectId, modelName = mutaction.model.dbName, fieldName = mutaction.field.dbName))
   }
 }
 
 object DeleteScalarListInterpreter extends SqlMutactionInterpreter[DeleteScalarListTable] {
   override def execute(mutaction: DeleteScalarListTable) = {
     DBIO.seq(
-      PostgresDeployDatabaseMutationBuilder.dropScalarListTable(projectId = mutaction.projectId, modelName = mutaction.model, fieldName = mutaction.field))
+      PostgresDeployDatabaseMutationBuilder
+        .dropScalarListTable(projectId = mutaction.projectId, modelName = mutaction.model.dbName, fieldName = mutaction.field.dbName))
   }
 
   override def rollback(mutaction: DeleteScalarListTable) = {
     PostgresDeployDatabaseMutationBuilder.createScalarListTable(
       projectId = mutaction.projectId,
-      modelName = mutaction.model,
-      fieldName = mutaction.field,
-      typeIdentifier = mutaction.typeIdentifier
+      model = mutaction.model,
+      fieldName = mutaction.field.dbName,
+      typeIdentifier = mutaction.field.typeIdentifier
     )
   }
 }
@@ -45,13 +47,13 @@ object UpdateScalarListInterpreter extends SqlMutactionInterpreter[UpdateScalarL
     val newModel  = mutaction.newModel
 
     val updateType = if (oldField.typeIdentifier != newField.typeIdentifier) {
-      List(PostgresDeployDatabaseMutationBuilder.updateScalarListType(projectId, oldModel.name, oldField.name, newField.typeIdentifier))
+      List(PostgresDeployDatabaseMutationBuilder.updateScalarListType(projectId, oldModel.dbName, oldField.dbName, newField.typeIdentifier))
     } else {
       List.empty
     }
 
-    val renameTable = if (oldField.name != newField.name || oldModel.name != newModel.name) {
-      List(PostgresDeployDatabaseMutationBuilder.renameScalarListTable(projectId, oldModel.name, oldField.name, newModel.name, newField.name))
+    val renameTable = if (oldField.dbName != newField.dbName || oldModel.dbName != newModel.dbName) {
+      List(PostgresDeployDatabaseMutationBuilder.renameScalarListTable(projectId, oldModel.dbName, oldField.dbName, newModel.dbName, newField.dbName))
     } else {
       List.empty
     }
